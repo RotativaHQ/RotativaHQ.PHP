@@ -1,38 +1,77 @@
 <?php
 
-class HtmlAsset
-{
-    public $id = '';
-    public $content = '';
-
-    public function __construct ($id='', $content = '')
-    {
-        $this->id = $id;
-        $this->content = $content;
-    }
-}
-
-class PdfRequestPayloadV3
-{
-    public $id = '';
-    public $filename = '';
-    public $switches = '';
-    public $stringAssets = array();
-    public $binaryAssets = array();
-}
 /**
  * RotativaHQ api for PHP
  */
 class RotativaHQ
 {
-    private $indexHtml = '';
     private $sassets = array();
     private $bassets = array();
-    private $assets = array();
+    private $baseAddress = '';
+    private $endpointUrl = '';
+    private $apiKey = '';
+    private $filename = '';
+    private $wkoptions = array();
+    private $customSwitches = '';
     
-    function __construct()
+    function __construct($endpointUrl, $apiKey)
     {
-        # code...
+        $this->endpointUrl = $endpointUrl;
+        $this->apiKey = $apiKey;
+        
+        if (isset($_SERVER["HTTP_HOST"])) {
+            $scheme = $_SERVER["REQUEST_SCHEME"];
+            if (isset($scheme) == false) {
+                $scheme = 'http';
+            }
+            $self = $_SERVER['PHP_SELF'];
+            $res = $scheme . '://' . $_SERVER['HTTP_HOST'] . ':' . $_SERVER["SERVER_PORT"] . '/' . substr($self, 1, strrpos($self, '/'));
+            $this->baseAddress = $res;
+        }
+    }
+
+    function SetBaseAddress($baseAddress)
+    {
+        $this->baseAddress = $baseAddress;
+    }
+    
+    public function SetFilename($filename)
+    {
+        $this->filename = $filename;
+    }
+
+    public function SetCustomSwithes($customSwitches)
+    {
+        $this->customSwitches = $customSwitches;
+    }
+
+    public function SetPageOrientation($orientation)
+    {
+        array_push($this->wkoptions, "-O ".$orientation);
+    }
+
+    public function SetPageWidth($width)
+    {
+        array_push($this->wkoptions, "--page-width ".$width);
+    }
+
+    public function SetPageHeight($height)
+    {
+        array_push($this->wkoptions, "--page-height ".$height);
+    }
+
+    public function SetPageSize($pageSize)
+    {
+        // A4, A3, ...
+        array_push($this->wkoptions, "-s ".$pageSize);
+    }
+
+    public function SetPageMargins($pageMarginTop, $pageMarginRight, $pageMarginBottom, $pageMarginLeft)
+    {
+        array_push($this->wkoptions, "-T ".$pageMarginTop);
+        array_push($this->wkoptions, "-R ".$pageMarginRight);
+        array_push($this->wkoptions, "-B ".$pageMarginBottom);
+        array_push($this->wkoptions, "-L ".$pageMarginLeft);
     }
 
     public function GetHtmlAssets($html, $pageName)
@@ -49,7 +88,7 @@ class RotativaHQ
                 $suffix = pathinfo($imageRef->src)['extension'];
                 $newSrc = uniqid() .'.'. $suffix;
                 //$imageContent = file_get_contents($imageRef->src);
-                $imageContent = get_URL($imageRef->src);
+                $imageContent = $this->get_URL($imageRef->src);
                 //$bincontent =  new MongoBinData($imageContent, MongoBinData::GENERIC);
                 $bincontent = $imageContent;
                 array_push($assets, new WebPageAsset($imageRef->src, $newSrc, $bincontent, true));
@@ -113,7 +152,7 @@ class RotativaHQ
                 $csspath=substr($cssName,0,strrpos($cssName,'/')) . '/';
                 $path = normalize_path($csspath . $urlRef->src);
                 //$imageContent = file_get_contents($imageRef->src);
-                $imageContent = get_URL($path);
+                $imageContent = $this->get_URL($path);
                 //$bincontent =  new MongoBinData($imageContent, MongoBinData::GENERIC);
                 $bincontent = $imageContent;
                 array_push($assets, new WebPageAsset($urlRef->src, $newSrc, $bincontent, true));
@@ -124,12 +163,11 @@ class RotativaHQ
         return $assets;
     }
     
-    
-    
     public function GetPageStringAssets()
     {
         return $this->sassets;
     }
+    
     public function GetPageBinAssets()
     {
         return $this->bassets;
@@ -147,12 +185,6 @@ class RotativaHQ
         return $assets;
     }
 
-    public function GetBinaryContent($src)
-    {
-        $contents = readfile($src);
-        return $contents;
-    }
-
     public function IsLocal($src)
     {
         if (0 === strpos($src, 'http') or 0 === strpos($src, '//')) {
@@ -161,36 +193,40 @@ class RotativaHQ
         }
         return true;
     }
-    
-    public function SetHtml($html='')
-    {
-        $this->indexHtml = $html;
-        //array_push($this->sassets, new WebPageStringAsset('index.html', $html));
-        $dom = new domDocument;
-        $dom->loadHTML($html);
-        $dom->preserveWhiteSpace = false;
-        $imageRefs = $this->GetImagesAssets($dom);
-        foreach ($imageRefs as $imageRef)
-        {
-            if ($this->IsLocal($imageRef->src)) {
-                $suffix = pathinfo($imageRef->src)['extension'];
-                $newSrc = uniqid() .'.'. $suffix;
-                //$imageContent = file_get_contents($imageRef->src);
-                $imageContent = get_URL($imageRef->src);
-                //$bincontent =  new MongoBinData($imageContent, MongoBinData::GENERIC);
-                $bincontent = $imageContent;
-                array_push($this->assets, new WebPageAsset($imageRef->src, $newSrc, $bincontent, true));
-            }
-        }
-    }
 
+    function get_URL($url)
+    {
+        $ch = curl_init();
+
+        // Authentication
+        //curl_setopt($ch, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+        //curl_setopt($ch, CURLOPT_USERPWD, 'username:password');
+        if ($this->baseAddress == '') {
+            throw  new Exception('baseAddress not set');
+        }
+        $url = rtrim($this->baseAddress, "/") . "/" . ltrim($url, "/");
+        // Fetch content as binary data
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_BINARYTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+
+        // Fetch binary data
+        $imageData = curl_exec($ch);
+
+        curl_close($ch);
+
+        return $imageData;
+    }
+    
     public function GetPdfUrl($html)
     {
         $payload = new PdfRequestPayloadV3();
         $payload->id = 'dddfdfdfdferr';
+        $payload->switches = implode(" ", $this->wkoptions) .' '. $this->customSwitches;
+        if ($this->filename != '') {
+            $payload->filename = $this->filename;
+        }
         $assets = $this->GetHtmlAssets($html, 'index.html');
-        //$sassets = $this->GetPageStringAssets();
-        //array_push($assets, new WebPageAsset('', 'index.html', $this->indexHtml, false));
         $binAssets = array_filter($assets, function($a) {
             return $a->binary == true;
         });
@@ -205,36 +241,43 @@ class RotativaHQ
         {
             array_push($payload->stringAssets, MapStringAsset($strAsset));
         }
-        //$payload->binaryAssets = array_map("MapBinAsset", $binAssets);
-        //$payload->stringAssets = array_map("MapStringAsset", $strAssets);
-        //$encPayload = bson_encode($payload);
-        $document = new BSONDocument($payload);
-        $encPayload = $document->pack();
-        //$encPayload = MongoDB\BSON\fromPHP($payload);
-        
-        $fp = fopen('data.txt', 'w');
-        fwrite($fp, $encPayload);
-        fclose($fp);
+        $encPayload = json_encode($payload);
 
-
-        $opts = array(
-          'http'=>array(
-            'method'=>"POST",
-            'header'=>"Accept-language: en\r\n" .
-                      "Content-type: application/bson\r\n".
-                      "Accept: application/json\r\n".
-                      "X-ApiKey: f57634c2434d41e9b90e5d3d1aef4041\r\n",
-            'content'=>$encPayload
-          )
+        $ch = curl_init( $this->endpointUrl. '/v4' );
+        // Configuring curl options
+        $options = array(
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => array(
+            'Content-type: application/json',
+            'X-ApiKey: ' . $this->apiKey
+        ) ,
+        CURLOPT_POSTFIELDS => $encPayload
         );
+        // Setting curl options
+        curl_setopt_array( $ch, $options );
+        // Getting results
+        $result = curl_exec($ch); // Getting jSON result string
 
-        $context = stream_context_create($opts);
+        $json = json_decode($result, true);
+        if (isset($json)) {
+            return $json;
+        } else {
+            throw new Exception($result);
+        }
+    }
+    
+    public function DisplayPDF($html)
+    {
+        try {
+            $resp = $this->GetPdfUrl($html);
+            $url = $resp["pdfUrl"];
+            header('Location: ' . $url);
+        } catch (Exception $ex) {
+                echo var_dump($ex->getMessage());
+        }
 
-        /* Sends an http request to www.example.com
-           with additional headers shown above */
-        $fp = fopen('http://c619e71b.ngrok.io/v3', 'r', false, $context);
-        fpassthru($fp);
-        fclose($fp);
+        //echo $url;
+        exit();
     }
 }
 
@@ -298,6 +341,27 @@ class WebPageAssetRef
     }
 }
 
+class HtmlAsset
+{
+    public $id = '';
+    public $content = '';
+
+    public function __construct ($id='', $content = '')
+    {
+        $this->id = $id;
+        $this->content = $content;
+    }
+}
+
+class PdfRequestPayloadV3
+{
+    public $id = '';
+    public $filename = '';
+    public $switches = '';
+    public $stringAssets = array();
+    public $binaryAssets = array();
+}
+
 /**
  * This function is a proper replacement for realpath
  * It will _only_ normalize the path and resolve indirections (.. and .)
@@ -333,194 +397,13 @@ function normalize_path($path) {
     return implode("/", $parts);
 }
 
-function get_URL($url)
+function MapStringAsset($a)
 {
-    $ch = curl_init();
-
-    // Authentication
-    //curl_setopt($ch, CURLOPT_HTTPAUTH, CURLAUTH_BASIC); 
-    //curl_setopt($ch, CURLOPT_USERPWD, 'username:password'); 
-    
-    // Fetch content as binary data
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_BINARYTRANSFER, 1);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-    
-    // Fetch image data
-    $imageData = curl_exec($ch);
-    
-    curl_close($ch); 
-    
-    return $imageData;
+    return new WebPageStringAsset($a->originalSrc, $a->id, $a->content);
+}
+function MapBinAsset($a)
+{
+    return new WebPageBinAsset($a->originalSrc, $a->id, base64_encode($a->content));
 }
 
-    function MapStringAsset($a)
-    {
-        return new WebPageStringAsset($a->originalSrc, $a->id, $a->content);
-    }
-
-    function MapBinAsset($a)
-    {
-        return new WebPageBinAsset($a->originalSrc, $a->id, $a->content);
-    }
-
-
-class BSONDocument {
-
-    const T_ROOT = 1;
-    const T_DOCUMENT = 2;
-    const T_ARRAY = 3;
-
-    private $name;
-    private $type;
-    private $children = [];
-
-    public function __construct($data, $name = null) {
-        if (is_null($name)) {
-            $this->type = self::T_ROOT;
-        }
-        $this->name = $name;
-        switch (gettype($data)) {
-            case "array":
-                if (!$this->type) {
-                    if ($this->isSequential($data)) {
-                        $this->type = self::T_ARRAY;
-                    } else {
-                        $this->type = self::T_DOCUMENT;
-                    }
-                }
-                $this->children = $data;
-                break;
-            case "object":
-                if (!$this->type) {
-                    $this->type = self::T_DOCUMENT;
-                }
-                $this->children = get_object_vars($data);
-                break;
-            default:
-                throw new BSONException("Unexpected document type");
-        }
-    }
-
-    public function pack() {
-        $eList = '';
-        if (self::T_ROOT != $this->type) {
-            $prefix = "\x03";
-            if (self::T_ARRAY == $this->type) {
-                $prefix = "\x04";
-            }
-            $eList = pack('aa*x', $prefix, $this->name);
-        }
-        foreach ($this->children as $key => $val) {
-            if (is_scalar($val)) {
-                $element = new BSONScalar($val, $key);
-                $eList .= $element->pack();
-            } else {
-                $element = new BSONDocument($val, $key);
-                $packed = $element->pack();
-                $eList .=  pack("a*xa*", $key, $packed);
-            }
-        }
-        $len = 4 + strlen($eList);
-        $eList = pack("la*", $len, $eList);
-        return $eList;
-    }
-
-    private function isSequential(array $array) {
-        return array_keys($array) == range(0, count($array) - 1);
-    }
-
-}
-
-class BSONException extends Exception {
-}
-
-class BSONScalar {
-
-    const T_BOOL = 1;
-    const T_INT = 2;
-    const T_DOUBLE = 3;
-    const T_STRING = 4;
-    const T_NULL = 5;
-
-    private $type;
-    private $name;
-    private $value;
-
-    public function __construct($value, $name) {
-        $this->name = $name;
-        if (is_int($value)) {
-            $this->type = self::T_INT;
-        } elseif (is_string($value)) {
-            $this->type = self::T_STRING;
-        } elseif (is_double($value)) {
-            $this->type = self::T_DOUBLE;
-        } elseif (is_bool($value)) {
-            $this->type = self::T_BOOL;
-        } elseif (is_null($value)) {
-            $this->type = self::T_NULL;
-        } else {
-            throw new BSONException("Unexpected type");
-        }
-        $this->value = $value;
-    }
-
-    /**
-     * @return string
-     * @throws BSONException
-     */
-    public function pack() {
-        $ret = null;
-        switch ($this->type) {
-            case self::T_BOOL:
-                $ret = $this->packBool();
-                break;
-            case self::T_INT:
-                $ret = $this->packInt32();
-                break;
-            case self::T_DOUBLE:
-                $ret = $this->packDouble();
-                break;
-            case self::T_STRING:
-                $ret = $this->packString();
-                break;
-            case self::T_NULL:
-                $ret = $this->packNull();
-                break;
-            default:
-                throw new BSONException("Unexpected scalar value type");
-        }
-        return $ret;
-    }
-
-    private function packBool() {
-        return pack('aa*xc', "\x08", $this->name, $this->value);
-    }
-
-    private function packInt32() {
-        //@todo int64 support
-        return pack('aa*xV', "\x10", $this->name, $this->value);
-    }
-
-    private function packDouble() {
-        $val = pack('d', $this->value);
-        //long double imitation for x86 machines
-        if (4 == PHP_INT_SIZE) {
-            $val = $val."\x00\x00";
-        }
-        return "\x01".$this->name."\x00".$val;
-    }
-
-    private function packString() {
-        //@todo pack either UTF-8 strings or bin data
-        //for now consider all strings as generic bin
-        $len = strlen($this->value);
-        return pack('aa*xVca*', "\x05", $this->name, $len, "\x00", $this->value);
-    }
-
-    private function packNull() {
-        return pack('aa*x', "\x0A", $this->name);
-    }
-
-}
 ?>

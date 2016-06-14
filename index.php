@@ -12,7 +12,14 @@
 
 </p>
 <p>
-    <?php echo $_SERVER['PHP_SELF'] ?>
+    <?php
+
+    $self = $_SERVER['PHP_SELF'];
+    $res= $_SERVER["REQUEST_SCHEME"] . '://' . $_SERVER['HTTP_HOST'] . ':' . $_SERVER["SERVER_PORT"]. '/'.substr($self,1,strrpos($self,'/'));
+    echo $res;
+
+
+    ?>
 
 </p>
 <p>
