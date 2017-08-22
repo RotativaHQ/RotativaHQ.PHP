@@ -1,8 +1,44 @@
 <?php
-
 /**
- * RotativaHQ api for PHP
+ * filename	:	RotativaHQ.php
+ * version	:	1.0.0
+ *
+ * Basic usage is as follows:
+ *
+ *  1. Instantiate a RotativaHQ object
+ *
+ *      $rhq = new Htm2PdfApi(< YOUR ENDPOINT >, < YOUR APIKEY >);
+ *
+ *  2. Set options if needed
+ *
+ *      $rhq->SetFilename('my-report.pdf');     // use this if you want to set the file name the user will download
+ *      $rhq->SetPageOrientation('Landscape');  // values can be 'Landscape' or 'Portrait' (default is 'Portrait')
+ *      $rhq->SetPageSize(...);					// values can be A4, B0, Letter etc
+ *      $rhq->SetPageWidth(...);				// set the page width
+ *      $rhq->SetPageHeight(...);				// set the page height
+ *      $rhq->SetPageMargins(....);			    // set the margins
+ *      $rhq->SetCustomSwithes(...);            // set other wkhtmltopdf switches http://wkhtmltopdf.org/usage/wkhtmltopdf.txt
+ *
+ *  3. Load and/or build your html
+ *
+ *      No need to use absolute URL for images, css, fonts, etc ...
+ *
+ *      $html = '<html><body><h1>Report</h1><p><img src="/img/logo.png" /></p>...';
+ *
+ *      or
+ *
+ *      $html = file_get_contents('../pdf/report1.html');
+ *
+ *      or build with your favorite template engine.
+ *
+ *  4. Get the user to download the PDF from a private and secure cloud URL
+ *
+ *      $rhq->DisplayPDF($html);
+ *
+ *  If you need different functionality or need to report a bug, please write an email to support@rotativahq.com
  */
+
+
 class RotativaHQ
 {
     private $sassets = array();
@@ -30,7 +66,7 @@ class RotativaHQ
         }
     }
 
-    function SetBaseAddress($baseAddress)
+    public function SetBaseAddress($baseAddress)
     {
         $this->baseAddress = $baseAddress;
     }
@@ -93,6 +129,17 @@ class RotativaHQ
                 $bincontent = $imageContent;
                 array_push($assets, new WebPageAsset($imageRef->src, $newSrc, $bincontent, true));
                 $html = str_replace($imageRef->src, $newSrc, $html);
+            }
+        }
+
+        $jsLinks = $dom->getElementsByTagName('script');
+        foreach ($jsLinks as $js) {
+            if ($js->hasAttribute('src')) {
+                $src = $js->getAttribute('src');
+                $newSrc = uniqid() . '.js';
+                $jsContent = file_get_contents($src);
+                array_push($assets, new WebPageAsset($imageRef->src, $newSrc, $jsContent, false));
+                $html = str_replace($src, $newSrc, $html);
             }
         }
 
@@ -221,7 +268,7 @@ class RotativaHQ
     public function GetPdfUrl($html)
     {
         $payload = new PdfRequestPayloadV3();
-        $payload->id = 'dddfdfdfdferr';
+        $payload->id = uniqid();
         $payload->switches = implode(" ", $this->wkoptions) .' '. $this->customSwitches;
         if ($this->filename != '') {
             $payload->filename = $this->filename;
